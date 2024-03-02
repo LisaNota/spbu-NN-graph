@@ -1,209 +1,187 @@
-import numpy as np
-import networkx as nx
 import tkinter as tk
-import matplotlib.pyplot as plt
-from tkinter import ttk
+import networkx as nx
+from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-options = {
-    'node_color': '#D3D3D3',     # color of node
-    'node_size': 300,          # size of node
-    'width': 1,                 # line width of edges
-    'arrowstyle': '-|>',        # array style for directed graph
-    'arrowsize': 10,            # size of arrow
-    'edge_color':'black',       # edge color
-    'font_size': 12,            # size of font
-}
+class GraphWindow(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Поиск кратчайшего пути методом ближайшего соседа")
+        self.geometry("1400x500")
+        self.options = {
+            'node_color': '#D3D3D3',     # color of node
+            'node_size': 300,          # size of node
+            'width': 1,                 # line width of edges
+            'arrowstyle': '-|>',        # array style for directed graph
+            'arrowsize': 10,            # size of arrow
+            'edge_color':'black',       # edge color
+            'font_size': 12,
+        }
+
+        self.main_frame = tk.Frame(self)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas = tk.Canvas(self.main_frame, width=40, height=400, bg="white")
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.vertices = []
+        self.arrows = {}
+
+        self.canvas.bind("<Button-1>", self.on_mouse_pressed)
+        self.canvas.bind("<ButtonRelease-1>", self.on_mouse_released)
+
+        self.selected_vertex = None
+        self.start_pos = None
+        self.vertex_count = 0
+
+        self.control_frame = tk.Frame(self.main_frame, bg="#EAEAEA")
+        self.control_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        lbl3 = tk.Label(self.control_frame, text="Вводите взвешенные ребра в формате:", font=("Arial", 10), bg="#EAEAEA")
+        lbl3.grid(row=0, column=0, padx=5, pady=5)
+
+        lbl_1 = tk.Label(self.control_frame, text="(1, 2, 3); (2, 1, 8)", font=("Arial", 10), bg="#EAEAEA")
+        lbl_1.grid(row=1, column=0, padx=5, pady=5)
+
+        lbl_2 = tk.Label(self.control_frame, text="где первые два числа - вершины,", font=("Arial", 10), bg="#EAEAEA")
+        lbl_2.grid(row=2, column=0, padx=5, pady=5)
+
+        lbl_3 = tk.Label(self.control_frame, text="а третье - длина ребра", font=("Arial", 10), bg="#EAEAEA")
+        lbl_3.grid(row=3, column=0, padx=5, pady=5)
+
+        self.txt_edges = tk.Text(self.control_frame, width=37, height=5)
+        self.txt_edges.grid(row=4, column=0, padx=5, pady=5)
+
+        lbl5 = tk.Label(self.control_frame, text="Полученный путь", font=("Arial", 10), bg="#EAEAEA")
+        lbl5.grid(row=6, column=0, padx=5, pady=5)
+
+        self.txt_path = tk.Text(self.control_frame, width=37, height=3, state='disabled', background='#EAEAEA', fg="black")
+        self.txt_path.grid(row=7, column=0, padx=5, pady=5)
+
+        lbl_5 = tk.Label(self.control_frame, text="Длина пути", font=("Arial", 10), bg="#EAEAEA")
+        lbl_5.grid(row=8, column=0, padx=5, pady=5)
+
+        self.txt_path_length = tk.Text(self.control_frame, width=37, height=1, state='disabled', background='#EAEAEA', fg="black")
+        self.txt_path_length.grid(row=9, column=0, padx=5, pady=5)
+
+        btn_compute_path = tk.Button(self.control_frame, text="Вычислить оптимальный путь", width=42, command=self.nearest_neighbour, bg="#DDDDDD", activebackground="#CCCCCC", relief=tk.GROOVE)
+        btn_compute_path.grid(row=10, column=0, padx=5, pady=5)
+
+        btn_clear_graph = tk.Button(self.control_frame, text="Очистить граф", width=42, command=self.clear_graph, bg="#DDDDDD", activebackground="#CCCCCC", relief=tk.GROOVE)
+        btn_clear_graph.grid(row=11, column=0, padx=5, pady=5)
+
+        self.graph_canvas = tk.Canvas(self.control_frame, width=470, height=600, bg="white")
+        self.graph_canvas.place(relx=0.49, rely=0)
+
+    def on_mouse_pressed(self, event):
+        x, y = event.x, event.y
+        item = self.canvas.find_overlapping(x-5, y-5, x+5, y+5)
+        if item:
+            self.selected_vertex = item[0]
+            self.start_pos = event.x, event.y
+
+    def on_mouse_released(self, event):
+        if self.selected_vertex:
+            x, y = event.x, event.y
+            item = self.canvas.find_overlapping(x-5, y-5, x+5, y+5)
+            if item and item[0] != self.selected_vertex:
+                vertex_id = item[0]
+                arrow = self.canvas.create_line(self.start_pos[0], self.start_pos[1], event.x, event.y, arrow=tk.LAST)
+                self.arrows[(self.selected_vertex, vertex_id)] = arrow
+        self.selected_vertex = None
+        self.start_pos = None
+
+        if not self.selected_vertex and not self.start_pos:
+            nearby_vertices = self.canvas.find_overlapping(event.x-15, event.y-15, event.x+15, event.y+15)
+            if not nearby_vertices:
+                vertex = self.canvas.create_oval(event.x - 15, event.y - 15, event.x + 15, event.y + 15, fill="red")
+                label = self.canvas.create_text(event.x, event.y, text=str(self.vertex_count), fill="black", font=("Helvetica", 12))
+                self.vertices.append((vertex, label))
+                self.vertex_count += 1
 
 
-def creating(cnt_vertices: int, edges: str) -> None:
-    """
-    Creates and displays a graph based on the provided vertices and edges.
+    def nearest_neighbour(self):
+        nodes = [vertice for vertice in range(self.vertex_count)]
+        edges = self.txt_edges.get("1.0", tk.END)
+        edges = ''.join(edges).split(';')
+        edges = [edge.strip() for edge in edges]
+        weighted_edges = [eval(edge) for edge in edges]
 
-    Parameters:
-    cnt_vertices (int): The number of vertices in the graph.
-    edges (str): A string containing the edges of the graph in the format 
-                 "(vertex_1, vertex_2, weight); (vertex_1, vertex_2, weight); ...".
-                  Delimiters between edges are semicolons (;).
+        self.ANS_LEN = float('inf')
+        self.ANS_CYCLE = []
 
-    Returns:
-    None
-    """
-    global ax, canvas_widget, pos, options
+        for started_id in range(self.vertex_count):
+            summ = 0
+            curr = nodes[started_id]
+            completed = [curr]
 
-    edges = ''.join(edges).split(';')
-    edges = [edge.strip() for edge in edges]
-    weighted_edges = [eval(edge) for edge in edges]
-    vertices = list(range(cnt_vertices))
-    
-    G = nx.DiGraph(directed=True)
-    G.add_nodes_from(vertices)
-    G.add_weighted_edges_from(weighted_edges)
-
-    pos = nx.circular_layout(G)
-    nx.draw(G, ax=ax, pos=pos, with_labels=True, arrows=True, **options)
-
-    canvas_widget.draw()
-
-
-  def nearest_neighbour(cnt_vertices: int, edges: str, txt_len: tk.Text, txt_way: tk.Text) -> None:
-    """
-    Finds the approximate shortest path using the nearest neighbor heuristic and displays the result.
-
-    Parameters:
-    cnt_vertices (int): The number of vertices in the graph.
-    edges (str): A string containing the edges of the graph in the format "vertex_1, vertex_2, weight; vertex_1, vertex_2, weight; ...".
-                  Delimiters between edges are semicolons (;).
-    txt_len (tk.Text): A Text widget where the length of the found path will be displayed.
-    txt_way (tk.Text): A Text widget where the found path will be displayed.
-
-    Returns:
-    None
-    """
-    global ax_2, canvas_widget_2, pos, options
-    
-    nodes = [vertice for vertice in range(cnt_vertices)]
-    edges = ''.join(edges).split(';')
-    edges = [edge.strip() for edge in edges]
-    weighted_edges = [eval(edge) for edge in edges]
-    
-    ANS_LEN = float('inf')
-    ANS_CYCLE = []
-    
-    for started_id in range(cnt_vertices):
-        summ = 0
-        curr = nodes[started_id]
-        completed = [curr]
-
-        for i in range(cnt_vertices-1):
-            result = float('inf')
-            for edge in weighted_edges:
-                if edge[0] == curr and edge[1] not in completed and edge[2] < result:
+            for i in range(self.vertex_count - 1):
+                result = float('inf')
+                for edge in weighted_edges:
+                    if edge[0] == curr and edge[1] not in completed and edge[2] < result:
                         result = edge[2]
                         new_vert = edge[1]
-            completed.append(new_vert)
-            summ += result
-            curr = new_vert
+                completed.append(new_vert) 
+                summ += result
+                curr = new_vert
 
-        flag = False
-        for edge in weighted_edges:
-            if edge[0] == completed[0] and edge[1] == completed[-1]:
-                summ += edge[2]
-                flag = True
-                break
+            flag = False
+            for edge in weighted_edges:
+                if edge[0] == completed[-1] and edge[1] == completed[0]:
+                    summ += edge[2]
+                    flag = True
+                    break
+                
+            if flag:
+                if summ < self.ANS_LEN:
+                    self.ANS_LEN = summ
+                    self.ANS_CYCLE = completed
 
-        if summ < ANS_LEN:
-            ANS_LEN = summ
-            ANS_CYCLE = completed
+        self.txt_path_length.config(state='normal')
+        self.txt_path_length.delete(1.0, tk.END)
+        self.txt_path_length.insert(tk.END, self.ANS_LEN)
+        self.txt_path_length.config(state='disabled')
 
-    txt_len.config(state='normal')
-    txt_len.insert(tk.END, ANS_LEN)
-    txt_len.config(state='disabled')
+        self.txt_path.config(state='normal')
+        self.txt_path.delete(1.0, tk.END)
+        self.txt_path.insert(tk.END, self.ANS_CYCLE)
+        self.txt_path.config(state='disabled')
+        
+        self.ANS_CYCLE.append(self.ANS_CYCLE[0])
+        F = nx.DiGraph(directed=True)
 
-    txt_way.config(state='normal')
-    txt_way.insert(tk.END, ANS_CYCLE)
-    txt_way.config(state='disabled')
-    
-    F = nx.DiGraph(directed=True)
-    ANS_CYCLE.append(ANS_CYCLE[0])
-    F.add_nodes_from(ANS_CYCLE)
-    
-    for i in range(len(ANS_CYCLE)-1):
-        F.add_edge(ANS_CYCLE[i], ANS_CYCLE[i+1])
+        for i, (vertex, label) in enumerate(self.vertices):
+            F.add_node(i)
+            pos = self.canvas.coords(vertex)
+            pos = (pos[0] + 15, self.canvas.winfo_height() - pos[1] - 15)  
+            F.nodes[i]['pos'] = pos
 
-    nx.draw(F, ax=ax_2, pos=pos, with_labels=True, arrows=True, **options)
+        for i in range(len(self.ANS_CYCLE) - 1):
+            F.add_edge(self.ANS_CYCLE[i], self.ANS_CYCLE[i + 1])
 
-    canvas_widget_2.draw()
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+
+        pos = nx.get_node_attributes(F, 'pos')
+        nx.draw(F, pos=pos, ax=ax, with_labels=True, arrows=True, **self.options)
+        
+        ax.set_aspect('equal')
+        ax.set_adjustable('box')
+        canvas = FigureCanvasTkAgg(fig, master=self.control_frame)
+        canvas.draw()
+        canvas.get_tk_widget().place(relx=0.49, rely=0)
+
+        self.graph_canvas.update()
 
 
-root = tk.Tk()
-root.title("Поиск кратчайшего пути методом ближайшего соседа")
-root.geometry('800x500')
+    def clear_graph(self):
+        self.canvas.delete("all")
+        self.vertices = []
+        self.arrows = {}
+        self.vertex_count = 0
 
-#####     Frames    ######
+        self.graph_canvas.delete("all")
 
-canvas = tk.Canvas(root, width=1000, height=1000, borderwidth=0, highlightthickness=0)
-canvas.place(relx=0, rely=0.0)
-
-line1 = canvas.create_line(350, 240, 800, 240)
-line2 = canvas.create_line(350, 0, 350, 500)
-
-#####    Graph    #####
-
-fig, ax = plt.subplots(figsize=(3.5, 1.8))
-ax.set_facecolor('white')
-ax.set_axis_off()
-
-canvas_widget = FigureCanvasTkAgg(fig, master=root)
-canvas_widget.get_tk_widget().place(relx=0.5, rely=0.08)
-
-##### Settings #####
-
-lbl = tk.Label(root, text="Параметры входного графа", font=("Arial", 11) )
-lbl.place(relx=0.1, rely=0.01)
-
-lblfunc = tk.Label(root, text="Количество вершин:", font=("Arial", 10))
-lblfunc.place(relx=0.027, rely=0.075)
-
-cnt_vertices = tk.Spinbox(root, from_=2, to=10, width=5)
-cnt_vertices.place(relx=0.32, rely=0.08)
-
-lbl3 = tk.Label(root, text="Вводите взвешенные ребра в формате:", font=("Arial", 10))
-lbl3.place(relx=0.027, rely=0.12)
-
-lbl_1 = tk.Label(root, text="(1, 2, 3); (2, 1, 8)", font=("Arial", 10))
-lbl_1.place(relx=0.027, rely=0.16)
-
-lbl_2 = tk.Label(root, text="где первые два числа - вершины,", font=("Arial", 10))
-lbl_2.place(relx=0.027, rely=0.2)
-
-lbl_3 = tk.Label(root, text="а третье - длина ребра", font=("Arial", 10))
-lbl_3.place(relx=0.027, rely=0.24)
-
-txt_edges = tk.Text(root, width=37, height=5)  
-txt_edges.place(relx=0.027, rely=0.29)  
-
-but = tk.Button(root, text="Создать граф", width=42, 
-                command=lambda: creating(int(cnt_vertices.get()), txt_edges.get("1.0", tk.END)),
-                bg="#DDDDDD", activebackground="#CCCCCC", relief=tk.GROOVE)
-but.place(relx=0.027, rely=0.5)
-
-lbl5 = tk.Label(root, text="Полученный путь", font=("Arial", 10))
-lbl5.place(relx=0.027, rely=0.64)
-
-txt_1edges = tk.Text(root, width=37, height=3, state='disabled', background='#EAEAEA', fg="black")
-txt_1edges.place(relx=0.027, rely=0.7)  
-
-lbl_5 = tk.Label(root, text="Длина пути", font=("Arial", 10))
-lbl_5.place(relx=0.027, rely=0.82)
-
-txt_2edges = tk.Text(root, width=37, height=1, state='disabled',background='#EAEAEA',  fg="black")
-txt_2edges.place(relx=0.027, rely=0.88)  
-
-txt_1edges = tk.Text(root, width=37, height=3, state='disabled', background='#EAEAEA', fg="black")
-txt_1edges.place(relx=0.027, rely=0.7)  
-
-but_2 = tk.Button(root, text="Вычислить оптимальный путь", width=42, 
-                command=lambda: nearest_neighbour(int(cnt_vertices.get()), txt_edges.get("1.0", tk.END), txt_2edges, txt_1edges), 
-                bg="#DDDDDD", activebackground="#CCCCCC", relief=tk.GROOVE)
-but_2.place(relx=0.027, rely=0.57)
-
-#####  Result  ######
-
-lbl6 = tk.Label(root, text="Исходный граф", font=("Arial", 11))
-lbl6.place(relx=0.64, rely=0.01)
-
-lbl6 = tk.Label(root, text="Выходной граф", font=("Arial", 11))
-lbl6.place(relx=0.64, rely=0.515)
-
-fig_2, ax_2 = plt.subplots(figsize=(3.5, 1.8))
-ax_2.set_facecolor('white')
-ax_2.set_axis_off()
-
-canvas_widget_2 = FigureCanvasTkAgg(fig_2, master=root)
-canvas_widget_2.get_tk_widget().place(relx=0.5, rely=0.58)
-
-#####################
-
-root.mainloop()
-
+if __name__ == "__main__":
+    app = GraphWindow()
+    app.mainloop()
